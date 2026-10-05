@@ -5,6 +5,9 @@ const PDFDocument = require('pdfkit');
 const { EventEmitter } = require('events');
 const { db, initDb, verify, hash, DEPARTMENTS } = require('./db');
 const sendWA = require('./sendWA');
+// BigInt serializer untuk Turso
+// Turso mengembalikan lastInsertRowid sebagai BigInt yang tidak bisa di-JSON.stringify secara default.
+BigInt.prototype.toJSON = function() { return Number(this); };
 
 const SECRET = process.env.APP_SECRET;
 if (!SECRET) {
@@ -98,7 +101,7 @@ app.post('/api/public/requests', limit, async (req, res) => {
         sql: `INSERT INTO leave_requests(applicant_name,applicant_nik,applicant_position,department,phone,leave_type,start_date,end_date,reason,status,owner_hash) VALUES (?,?,?,?,?,?,?,?,?,'PENDING_SUPERVISOR',?)`,
         args: [name, nik, position, department, phone || null, leave_type, start_date, end_date, reason, sha(b.owner_key)]
       });
-      const id = idRes.lastInsertRowid;
+      const id = Number(idRes.lastInsertRowid);
       await tx.execute({ sql: 'INSERT INTO audit_logs(actor,action,entity,entity_id,detail) VALUES (?,?,?,?,?)', args: [name, 'SUBMIT', 'leave_request', id, JSON.stringify({ nik, department })] });
       for (const s of sups) {
         const e = await tx.execute({ sql: 'SELECT phone FROM employees WHERE id=?', args: [s.eid] });
