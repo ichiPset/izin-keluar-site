@@ -3,15 +3,36 @@ const crypto = require('crypto');
 
 const DEPARTMENTS = ['HRGA', 'MINING', 'PLAN', 'HSE', 'LOGISTIK', 'VENDOR', 'VISITOR'];
 
-// Koneksi ke Turso menggunakan Environment Variables
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN,
-});
+let _client = null;
 
-// Fungsi inisialisasi database (dijalankan sekali saat aplikasi start)
+// Fungsi untuk mendapatkan koneksi database (lazy - dibuat saat pertama kali dipakai)
+function getClient() {
+  if (_client) return _client;
+
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+
+  if (!url) {
+    throw new Error('FATAL: Environment variable TURSO_DATABASE_URL belum diatur di Vercel!');
+  }
+  if (!authToken) {
+    throw new Error('FATAL: Environment variable TURSO_AUTH_TOKEN belum diatur di Vercel!');
+  }
+
+  _client = createClient({ url, authToken });
+  return _client;
+}
+
+// Wrapper object agar API-nya tetap sama (db.execute, db.transaction)
+const db = {
+  execute: (...args) => getClient().execute(...args),
+  batch: (...args) => getClient().batch(...args),
+  transaction: (...args) => getClient().transaction(...args),
+};
+
 async function initDb() {
-  await db.execute(`
+  const client = getClient();
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS employees (
       id INTEGER PRIMARY KEY, nik TEXT UNIQUE NOT NULL, name TEXT NOT NULL, phone TEXT, active INTEGER NOT NULL DEFAULT 1
     );
@@ -54,20 +75,35 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS idx_lr_status ON leave_requests(status);
   `);
 
-  // Inisialisasi akun admin default jika belum ada
-  const adminCheck = await db.execute("SELECT 1 FROM users WHERE role='ADMIN'");
+  const userCheck = await client.execute("SELECT 1 FROM users LIMIT 1");
+  const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password123';
+
+  if (userCheck.rows.length === 0) {
+    const rules = [
+      ['KELUAR_SITE_PRIBADI', 'Keluar Site - Keperluan Pribadi', 1, 3],
+      ['SAKIT', 'Sakit', 1, 5],
+      ['CUTI_TAHUNAN', 'Cuti Tahunan', 1, 12],
+      ['IZIN_KHUSUS', 'Izin Khusus (review manual HR)', 0, null],
+    ];
+    for (const r of rules) {
+      await client.execute({
+        sql: 'INSERT OR IGNORE INTO approval_rules(leave_type,label,auto_approve,max_days) VALUES (?,?,?,?)',
+        args: r
+      });
+    }
+  }
+
+  const adminCheck = await client.execute("SELECT 1 FROM users WHERE role='ADMIN'");
   if (adminCheck.rows.length === 0) {
-    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password123';
-    const pwHash = hash(defaultPassword);
-    await db.execute({
+    await client.execute({
       sql: "INSERT OR IGNORE INTO employees(nik,name,phone) VALUES ('A001','Admin Sistem','6281200000005')",
       args: []
     });
-    const emp = await db.execute("SELECT id FROM employees WHERE nik='A001'");
+    const emp = await client.execute("SELECT id FROM employees WHERE nik='A001'");
     const eid = emp.rows[0].id;
-    await db.execute({
+    await client.execute({
       sql: "INSERT INTO users(username,password_hash,role,employee_id) VALUES ('admin',?, 'ADMIN',?)",
-      args: [pwHash, eid]
+      args: [hash(defaultPassword), eid]
     });
   }
 }
