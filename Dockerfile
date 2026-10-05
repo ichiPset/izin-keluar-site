@@ -11,7 +11,7 @@ RUN npm ci --omit=dev
 # Copy seluruh kode aplikasi
 COPY . .
 
-# Buat folder data untuk SQLite (jika belum ada)
+# Buat folder data untuk SQLite
 RUN mkdir -p data
 
 # Expose port aplikasi
