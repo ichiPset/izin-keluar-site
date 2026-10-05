@@ -229,9 +229,9 @@ app.post('/api/admin/users', auth('ADMIN'), async (req, res) => {
       } else {
         if (pw.length < 6) throw bad('Password minimal 6 karakter');
         const eidRes = await tx.execute({ sql: 'INSERT INTO employees(nik,name,phone,active) VALUES (?,?,?,?)', args: ['USR-' + username.toUpperCase(), name, normPhone(b.phone) || null, active] });
-        const eid = eidRes.lastInsertRowid;
-        const idRes = await tx.execute({ sql: 'INSERT INTO users(username,password_hash,role,employee_id) VALUES (?,?,?,?)', args: [username, hash(pw), role, eid] });
-        id = idRes.lastInsertRowid;
+const eid = Number(eidRes.lastInsertRowid); // Konversi ke Number
+const idRes = await tx.execute({ sql: 'INSERT INTO users(username,password_hash,role,employee_id) VALUES (?,?,?,?)', args: [username, hash(pw), role, eid] });
+id = Number(idRes.lastInsertRowid); // Konversi ke Number
       }
       await tx.execute({ sql: 'DELETE FROM dept_supervisors WHERE user_id=?', args: [id] });
       if (role === 'SUPERVISOR') for (const d of depts) await tx.execute({ sql: 'INSERT INTO dept_supervisors VALUES (?,?)', args: [d, id] });

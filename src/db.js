@@ -27,7 +27,18 @@ function getClient() {
 const db = {
   execute: (...args) => getClient().execute(...args),
   batch: (...args) => getClient().batch(...args),
-  transaction: (...args) => getClient().transaction(...args),
+  transaction: async (fn) => {
+    // @libsql/client membutuhkan mode "write" untuk operasi tulis
+    const tx = await getClient().transaction("write");
+    try {
+      const result = await fn(tx);
+      await tx.commit(); // Wajib: simpan perubahan
+      return result;
+    } catch (e) {
+      await tx.rollback(); // Wajib: batalkan jika ada error
+      throw e;
+    }
+  },
 };
 
 async function initDb() {
