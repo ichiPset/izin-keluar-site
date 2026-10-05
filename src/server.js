@@ -119,7 +119,18 @@ app.post('/api/public/history', limit, async (req, res) => {
 });
 
 const MYDEPT = 'department IN (SELECT department FROM dept_supervisors WHERE user_id=?)';
-app.get('/api/supervisor/requests', auth('SUPERVISOR'), async (req, res) => res.json(await dbAll(`SELECT * FROM leave_requests WHERE ${MYDEPT} ORDER BY (status='PENDING_SUPERVISOR') DESC, id DESC LIMIT 200`, [req.user.uid])));
+app.get('/api/requests/:id/log', auth('SUPERVISOR', 'HR', 'ADMIN'), async (req, res) => {
+  const id = +req.params.id, cols = 'id,request_no,applicant_name,department,status';
+  
+  const r = req.user.role === 'SUPERVISOR' 
+    ? await dbGet(`SELECT ${cols} FROM leave_requests WHERE id=? AND ${MYDEPT}`, [id, req.user.uid])
+    : await dbGet(`SELECT ${cols} FROM leave_requests WHERE id=?`, [id]);
+    
+  if (!r) return res.status(404).json({ error: 'Tidak ditemukan atau bukan departemen Anda' });
+  
+  const logs = await dbAll("SELECT actor,action,detail,created_at FROM audit_logs WHERE entity='leave_request' AND entity_id=? ORDER BY id", [id]);
+  res.json({ request: r, log: logs });
+});
 app.post('/api/supervisor/requests/:id/decision', auth('SUPERVISOR'), async (req, res) => {
   const { action, version, note } = req.body, id = +req.params.id;
   if (!['APPROVE', 'REJECT'].includes(action)) return res.status(400).json({ error: 'Aksi tidak valid' });
@@ -272,7 +283,110 @@ app.delete('/api/admin/users/:id', auth('ADMIN'), async (req, res) => {
 
 // PDF dan route lainnya tetap sama seperti sebelumnya
 // (Salin dari kode asli Anda, karena tidak ada perubahan logika database di dalamnya)
-// ... [PDF Routes] ...
+// ---------- Surat persetujuan PDF (dibuat saat diunduh, tidak disimpan) ----------
+async function sendPdf(res, r) {
+  if (!['AUTO_APPROVED_HR', 'APPROVED_HR'].includes(r.status)) {
+    return res.status(400).json({ error: 'Izin belum disetujui sepenuhnya' });
+  }
+  
+  const ap = await dbAll('SELECT * FROM request_approvals WHERE request_id=? ORDER BY id', [r.id]);
+  const rule = await dbGet('SELECT label FROM approval_rules WHERE leave_type=?', [r.leave_type]);
+  
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${r.request_no.replace(/\//g, '-')}.pdf"`);
+  
+  const doc = new PDFDocument({ size: 'A4', margin: 0, info: { Title: 'Surat Izin ' + r.request_no, Author: 'PT Geopersada Mulia Abadi' } });
+  doc.pipe(res);
+  
+  const W = 595.28, M = 48, CW = W - 2 * M, GREEN = '#0b6e4f', GOLD = '#c9a227', INK = '#1b2430', MUTED = '#6b7785', LINE = '#d5dbe2';
+  const fmt = (v) => new Date(v + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  const cut = (v, n) => { v = String(v || '-'); return v.length > n ? v.slice(0, n - 3) + '...' : v; };
+  
+  // kop surat
+  doc.rect(0, 0, W, 112).fill(GREEN); doc.rect(0, 112, W, 4).fill(GOLD);
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(19).text('SURAT IZIN MENINGGALKAN SITE', 0, 30, { width: W, align: 'center' });
+  doc.fillColor('#e3f3ec').font('Helvetica').fontSize(13).text('PT Geopersada Mulia Abadi', 0, 58, { width: W, align: 'center' });
+  doc.fillColor('#e3f3ec').fontSize(10).text('Nomor: ' + r.request_no, 0, 84, { width: W, align: 'center' });
+  
+  let y = 140;
+  const section = (t) => { doc.fillColor(GREEN).font('Helvetica-Bold').fontSize(10).text(t.toUpperCase(), M, y, { characterSpacing: 1 });
+    y += 16; doc.moveTo(M, y).lineTo(M + CW, y).lineWidth(1).strokeColor(GREEN).stroke(); y += 10; };
+  const field = (label, value, x, w) => { doc.fillColor(MUTED).font('Helvetica').fontSize(8).text(label.toUpperCase(), x, y, { width: w });
+    doc.fillColor(INK).font('Helvetica-Bold').fontSize(11).text(String(value || '-'), x, y + 12, { width: w }); };
+  
+  const half = CW / 2 - 8;
+  section('Data Pemohon');
+  field('Nama lengkap', r.applicant_name, M, half); field('NIK', r.applicant_nik, M + CW / 2 + 8, half); y += 40;
+  field('Jabatan', r.applicant_position, M, half); field('Departemen', r.department, M + CW / 2 + 8, half); y += 46;
+  
+  section('Detail Izin');
+  field('Jenis izin', rule ? rule.label : r.leave_type, M, half); field('Durasi', days(r.start_date, r.end_date) + ' hari', M + CW / 2 + 8, half); y += 40;
+  field('Periode', fmt(r.start_date) + ' s/d ' + fmt(r.end_date), M, CW); y += 40;
+  doc.fillColor(MUTED).font('Helvetica').fontSize(8).text('ALASAN', M, y);
+  doc.fillColor(INK).font('Helvetica').fontSize(11).text(String(r.reason), M, y + 12, { width: CW });
+  y += 12 + doc.heightOfString(String(r.reason), { width: CW }) + 24;
+  
+  section('Riwayat Persetujuan');
+  const cols = [[M, 62, 'Tahap'], [M + 62, 118, 'Pejabat'], [M + 180, 100, 'Keputusan'], [M + 280, 105, 'Waktu'], [M + 385, CW - 385, 'Catatan']];
+  doc.rect(M, y, CW, 20).fill('#eef3f1');
+  cols.forEach(([x, w, t]) => doc.fillColor(GREEN).font('Helvetica-Bold').fontSize(9).text(t, x + 6, y + 6, { width: w - 8 }));
+  y += 20;
+  
+  const LV = { SUPERVISOR: 'Atasan', HR: 'HR' }, AC = { APPROVE: 'Disetujui', AUTO_APPROVE: 'Disetujui otomatis', REJECT: 'Ditolak' };
+  ap.forEach((a) => {
+    const row = [LV[a.level] || a.level, cut(a.approver, 22), AC[a.action] || a.action, a.created_at, cut(a.note, 28)];
+    cols.forEach(([x, w], i) => doc.fillColor(INK).font('Helvetica').fontSize(9).text(row[i], x + 6, y + 6, { width: w - 8 }));
+    y += 22; doc.moveTo(M, y).lineTo(M + CW, y).lineWidth(0.5).strokeColor(LINE).stroke();
+  });
+  
+  // pengesahan
+  y += 28;
+  doc.fillColor(INK).font('Helvetica-Bold').fontSize(10).text('Disahkan secara elektronik', M, y);
+  doc.fillColor(MUTED).font('Helvetica').fontSize(9).text('Izin ini telah disetujui melalui sistem sesuai alur persetujuan di atas dan sah tanpa tanda tangan basah.', M, y + 15, { width: CW - 190 });
+  doc.save(); doc.rotate(-8, { origin: [W - M - 85, y + 25] });
+  doc.roundedRect(W - M - 160, y, 150, 46, 6).lineWidth(2.5).strokeColor('#1a7f4f').stroke();
+  doc.fillColor('#1a7f4f').font('Helvetica-Bold').fontSize(19).text('DISETUJUI', W - M - 160, y + 14, { width: 150, align: 'center' });
+  doc.restore();
+  
+  // footer
+  doc.moveTo(M, 796).lineTo(M + CW, 796).lineWidth(0.5).strokeColor(LINE).stroke();
+  doc.fillColor(MUTED).font('Helvetica').fontSize(8).text('PT Geopersada Mulia Abadi  |  Sistem Izin Keluar Site  |  No. ' + r.request_no, M, 803, { width: CW, align: 'center' });
+  doc.text('Dokumen diterbitkan otomatis oleh sistem. Dicetak: ' + new Date().toLocaleString('id-ID'), M, 815, { width: CW, align: 'center' });
+  doc.end();
+}
+
+app.get('/api/requests/:id/pdf', auth('SUPERVISOR', 'HR', 'ADMIN'), async (req, res) => {
+  const r = await dbGet('SELECT * FROM leave_requests WHERE id=?', [+req.params.id]); 
+  if (!r) return res.status(404).json({ error: 'Tidak ditemukan' });
+  
+  if (req.user.role === 'SUPERVISOR') {
+    const isSupervisor = await dbGet('SELECT 1 FROM dept_supervisors WHERE user_id=? AND department=?', [req.user.uid, r.department]);
+    if (!isSupervisor) return res.status(403).json({ error: 'Tidak punya akses' });
+  }
+  await sendPdf(res, r);
+});
+
+app.get('/api/public/requests/:id/pdf', limit, async (req, res) => {
+  const r = await dbGet('SELECT * FROM leave_requests WHERE id=?', [+req.params.id]);
+  if (!r || !validKey(req.headers['x-owner-key']) || !r.owner_hash || r.owner_hash !== sha(req.headers['x-owner-key'])) {
+    return res.status(404).json({ error: 'Tidak ditemukan' });
+  }
+  await sendPdf(res, r);
+});
+
+// ---------- Log riwayat & status per pengajuan (atasan departemen terkait, HR, admin) ----------
+app.get('/api/requests/:id/log', auth('SUPERVISOR', 'HR', 'ADMIN'), async (req, res) => {
+  const id = +req.params.id, cols = 'id,request_no,applicant_name,department,status';
+  
+  const r = req.user.role === 'SUPERVISOR' 
+    ? await dbGet(`SELECT ${cols} FROM leave_requests WHERE id=? AND ${MYDEPT}`, [id, req.user.uid])
+    : await dbGet(`SELECT ${cols} FROM leave_requests WHERE id=?`, [id]);
+    
+  if (!r) return res.status(404).json({ error: 'Tidak ditemukan atau bukan departemen Anda' });
+  
+  const logs = await dbAll("SELECT actor,action,detail,created_at FROM audit_logs WHERE entity='leave_request' AND entity_id=? ORDER BY id", [id]);
+  res.json({ request: r, log: logs });
+});
 
 // Worker Notifikasi WA
 let busy = false;
