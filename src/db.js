@@ -32,49 +32,53 @@ const db = {
 
 async function initDb() {
   const client = getClient();
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS employees (
+
+  // Turso tidak bisa mengeksekusi banyak perintah dalam satu string.
+  // Kita gunakan batch() untuk menjalankannya secara terpisah.
+  await client.batch([
+    `CREATE TABLE IF NOT EXISTS employees (
       id INTEGER PRIMARY KEY, nik TEXT UNIQUE NOT NULL, name TEXT NOT NULL, phone TEXT, active INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS users (
+    )`,
+    `CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('EMPLOYEE','SUPERVISOR','HR','ADMIN')),
       employee_id INTEGER NOT NULL REFERENCES employees(id)
-    );
-    CREATE TABLE IF NOT EXISTS dept_supervisors (
+    )`,
+    `CREATE TABLE IF NOT EXISTS dept_supervisors (
       department TEXT NOT NULL, user_id INTEGER NOT NULL REFERENCES users(id), PRIMARY KEY (department, user_id)
-    );
-    CREATE TABLE IF NOT EXISTS request_approvals (
+    )`,
+    `CREATE TABLE IF NOT EXISTS request_approvals (
       id INTEGER PRIMARY KEY, request_id INTEGER NOT NULL, level TEXT NOT NULL, approver TEXT NOT NULL, action TEXT NOT NULL, note TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS approval_rules (
+    )`,
+    `CREATE TABLE IF NOT EXISTS approval_rules (
       id INTEGER PRIMARY KEY, leave_type TEXT UNIQUE NOT NULL, label TEXT NOT NULL,
       auto_approve INTEGER NOT NULL DEFAULT 0, max_days INTEGER, active INTEGER NOT NULL DEFAULT 1
-    );
-    CREATE TABLE IF NOT EXISTS notifications (
+    )`,
+    `CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY, employee_id INTEGER NOT NULL DEFAULT 0, phone TEXT, message TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'QUEUED', attempts INTEGER NOT NULL DEFAULT 0, created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_notif_status ON notifications(status);
-    CREATE TABLE IF NOT EXISTS audit_logs (
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_notif_status ON notifications(status)`,
+    `CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY, actor TEXT NOT NULL, action TEXT NOT NULL, entity TEXT, entity_id INTEGER, detail TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS leave_requests (
+    )`,
+    `CREATE TABLE IF NOT EXISTS counters (name TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
+    `CREATE TABLE IF NOT EXISTS leave_requests (
       id INTEGER PRIMARY KEY, request_no TEXT UNIQUE, employee_id INTEGER,
       applicant_name TEXT NOT NULL, applicant_nik TEXT NOT NULL, applicant_position TEXT NOT NULL, department TEXT NOT NULL, phone TEXT,
       leave_type TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, reason TEXT NOT NULL, status TEXT NOT NULL, reject_reason TEXT,
       version INTEGER NOT NULL DEFAULT 1, owner_hash TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime')), updated_at TEXT DEFAULT (datetime('now','localtime'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_lr_owner ON leave_requests(owner_hash);
-    CREATE INDEX IF NOT EXISTS idx_lr_dept ON leave_requests(department, status);
-    CREATE INDEX IF NOT EXISTS idx_lr_nik ON leave_requests(applicant_nik);
-    CREATE INDEX IF NOT EXISTS idx_lr_status ON leave_requests(status);
-  `);
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_lr_owner ON leave_requests(owner_hash)`,
+    `CREATE INDEX IF NOT EXISTS idx_lr_dept ON leave_requests(department, status)`,
+    `CREATE INDEX IF NOT EXISTS idx_lr_nik ON leave_requests(applicant_nik)`,
+    `CREATE INDEX IF NOT EXISTS idx_lr_status ON leave_requests(status)`,
+  ], 'write');
 
+  // Inisialisasi akun admin + rules jika belum ada
   const userCheck = await client.execute("SELECT 1 FROM users LIMIT 1");
   const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'password123';
 
