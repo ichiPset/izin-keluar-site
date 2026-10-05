@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Izin Keluar Site</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mu:#6b7785;--pr:#0b6e4f;--bd:#dde3ea}
+@media(prefers-color-scheme:dark){:root{--bg:#12171d;--card:#1c232c;--tx:#e8edf2;--mu:#93a0ae;--pr:#3cc99a;--bd:#2d3844}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd)}
+a{color:var(--pr)}main{max-width:900px;margin:16px auto;padding:0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:14px}
+input[type=checkbox]{width:auto}input,select,textarea,button{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);width:100%;margin:4px 0 10px}
+button{width:auto;cursor:pointer;background:var(--pr);color:#fff;border:0;margin:0 4px 0 0}button.r{background:#c0392b}button.g{background:transparent;color:var(--pr);border:1px solid var(--pr)}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--bd);vertical-align:top}
+.b{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--bd)}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:600px){.row{grid-template-columns:1fr}}small{color:var(--mu)}.err{color:#c0392b}
+</style></head><body>
+<header><b>📋 Izin Keluar Site</b><span id="who"></span></header>
+<main id="app"></main>
+<script>
+const $=(s)=>document.querySelector(s);let T=localStorage.t,U=JSON.parse(localStorage.u||'null'),USERS=[],META,tm;
+const api=async(p,o={})=>{const h={};if(T)h.Authorization='Bearer '+T;let body;
+ if(o.json){h['Content-Type']='application/json';body=JSON.stringify(o.json)}
+ const r=await fetch('/api'+p,{method:o.method||'GET',headers:h,body});const d=await r.json().catch(()=>({}));
+ if(r.status===401&&T&&p!=='/login'){logout();throw new Error(d.error||'Sesi habis')}if(!r.ok)throw new Error(d.error||'Error');return d};
+const esc=(s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const LBL={PENDING_SUPERVISOR:'Menunggu Atasan',APPROVED_ATASAN:'Diproses Sistem',AUTO_APPROVED_HR:'Disetujui (Auto)',PENDING_HR_MANUAL:'Menunggu HR',APPROVED_HR:'Disetujui HR',REJECTED:'Ditolak'};
+const badge=(s)=>`<span class="b">${LBL[s]||s}</span>`;
+function logout(){localStorage.removeItem('t');localStorage.removeItem('u');T=U=null;location.hash='';render()}
+function render(){
+ $('#who').innerHTML=U?`${esc(U.name)} (${U.role}) <button class="g" onclick="logout()">Keluar</button>`:'<a href="#login">Login Petugas</a>';
+ if(U&&U.role==='ADMIN')return adminPanel('users');if(U&&U.role==='SUPERVISOR')return supPanel();if(U&&U.role==='HR')return hrPanel();
+ if(U)return logout();location.hash==='#login'?loginView():pub()}
+window.onhashchange=render;
+const eye=(id)=>`<span title="Tampilkan/sembunyikan" onclick="const i=document.getElementById('${id}');i.type=i.type==='password'?'text':'password'" style="position:absolute;right:12px;top:13px;cursor:pointer;user-select:none">👁</span>`;
+function loginView(){$('#app').innerHTML=`<form id="lf" class="card" style="max-width:340px;margin:40px auto"><h3>Login Petugas</h3><small>Atasan, HR, dan Admin</small>
+ <input id="u" placeholder="Username" autocomplete="username" style="margin-top:10px">
+ <div style="position:relative"><input id="p" type="password" placeholder="Password" autocomplete="current-password" style="padding-right:40px">${eye('p')}</div>
+ <button type="submit">Masuk</button><a href="#">← Form izin</a><p id="msg" class="err"></p><small>Demo: budi / rina / admin — password123</small></form>`;
+ $('#lf').onsubmit=(e)=>{e.preventDefault();login()};$('#u').focus()}
+async function login(){const m=$('#msg');m.textContent='';const u=$('#u').value.trim(),p=$('#p').value;
+ if(!u||!p){m.textContent='Username dan password wajib diisi';return}
+ try{const d=await api('/login',{method:'POST',json:{username:u,password:p}});
+  T=localStorage.t=d.token;U=d.user;localStorage.u=JSON.stringify(U);location.hash='';render()}catch(e){m.textContent=e.message}}
+
+/* ---------- Halaman awal: form pemohon (tanpa login & tanpa pendaftaran) ---------- */
+async function pub(){const m=await api('/public/meta'),today=new Date().toLocaleDateString('sv-SE'),P=JSON.parse(localStorage.prof||'{}'),v=(k)=>esc(P[k]||'');
+ $('#app').innerHTML=`<div class="card"><h3>Form Izin Meninggalkan Site</h3><form id="f">
+ <div class="row"><div><label>Nama lengkap *</label><input name="name" value="${v('name')}" required></div><div><label>NIK *</label><input name="nik" value="${v('nik')}" required></div></div>
+ <div class="row"><div><label>Jabatan *</label><input name="position" value="${v('position')}" required></div>
+ <div><label>Departemen *</label><select name="department" required><option value="">— pilih —</option>${m.departments.map(d=>`<option ${P.department===d?'selected':''}>${d}</option>`).join('')}</select></div></div>
+ <label>No. WhatsApp <small>(opsional, untuk notifikasi hasil)</small></label><input name="phone" value="${v('phone')}" placeholder="08xxxxxxxxxx" inputmode="tel">
+ <label>Jenis izin *</label><select name="leave_type">${m.rules.map(r=>`<option value="${r.leave_type}">${esc(r.label)}</option>`).join('')}</select>
+ <div class="row"><div><label>Tanggal mulai *</label><input type="date" name="start_date" min="${today}" required></div>
+ <div><label>Tanggal selesai *</label><input type="date" name="end_date" min="${today}" required></div></div>
+ <label>Alasan *</label><textarea name="reason" rows="3" maxlength="500" required></textarea>
+ <button>Kirim Pengajuan</button> <span id="msg"></span></form></div><div class="card" id="hist" hidden></div>`;
+ const F=$('#f'),E=F.elements;hist();
+ F.onsubmit=async(e)=>{e.preventDefault();const s=$('#msg');s.className='err';s.textContent='';const o=Object.fromEntries(new FormData(F));
+  try{await api('/public/requests',{method:'POST',json:{...o,owner_key:pkey()}});localStorage.prof=JSON.stringify({name:o.name,nik:o.nik,position:o.position,department:o.department,phone:o.phone});
+   s.className='';s.style.color='var(--pr)';s.textContent='✔ Terkirim ke atasan departemen '+o.department+'.';E.reason.value='';hist()}catch(x){s.textContent=x.message}}}
+function pkey(){let k=localStorage.pkey;if(!/^[a-f0-9]{32}$/.test(k||'')){k=[...crypto.getRandomValues(new Uint8Array(16))].map(b=>b.toString(16).padStart(2,'0')).join('');localStorage.pkey=k}return k}
+async function hist(){const h=$('#hist');if(!h)return;let r=[];try{r=await api('/public/history',{method:'POST',json:{owner_key:pkey()}})}catch(e){}
+ h.hidden=false;h.innerHTML='<h3>Riwayat & Status Saya</h3><small>🔒 Pribadi: hanya terlihat di perangkat/browser ini, tidak bisa dibuka orang lain.</small>'+(r.length?tbl(r,false):'<p><small>Belum ada pengajuan.</small></p>')+
+ `<details style="margin-top:12px"><summary>Kode akses pribadi <small>(untuk membuka riwayat ini di perangkat lain)</small></summary><p><code style="word-break:break-all">${pkey()}</code></p>
+  <input id="rk" placeholder="Tempel kode akses dari perangkat lain"><button class="g" onclick="restoreKey()">Pulihkan riwayat</button></details>`}
+function restoreKey(){const k=$('#rk').value.trim().toLowerCase();if(!/^[a-f0-9]{32}$/.test(k))return alert('Kode akses tidak valid');localStorage.pkey=k;hist()}
+
+/* ---------- tabel & aksi bersama ---------- */
+function tbl(rows,act){return`<table><tr><th>Tgl</th>${act?'<th>Pemohon</th>':''}<th>Jenis</th><th>Alasan</th><th>Status</th>${act?'<th>Aksi</th>':''}</tr>`+
+ rows.map(r=>`<tr><td>${r.start_date}<br><small>s/d ${r.end_date}</small></td>${act?`<td>${esc(r.applicant_name)}<br><small>${esc(r.applicant_nik)} · ${esc(r.applicant_position)}<br>${esc(r.department)}</small></td>`:''}<td>${esc(r.leave_type)}</td>
+ <td>${esc(r.reason)}${r.reject_reason?`<br><small>Ditolak: ${esc(r.reject_reason)}</small>`:''}</td>
+ <td>${badge(r.status)}${r.request_no?`<br><small>${r.request_no}</small>`:''}${['AUTO_APPROVED_HR','APPROVED_HR'].includes(r.status)?`<br><button class="g" onclick="dl(${r.id})">⬇ PDF</button>`:''}</td>
+ ${act?`<td><button class="g" onclick="showLog(${r.id})">📜 Log</button> ${(act==='sup'&&r.status==='PENDING_SUPERVISOR'||act==='hr'&&r.status==='PENDING_HR_MANUAL')?
+ `<button onclick="decide('${act}',${r.id},${r.version},'APPROVE')">Setujui</button><button class="r" onclick="decide('${act}',${r.id},${r.version},'REJECT')">Tolak</button>`:''}</td>`:''}</tr>`).join('')+'</table>'}
+async function dl(id){const url=U?`/api/requests/${id}/pdf`:`/api/public/requests/${id}/pdf`;
+ const r=await fetch(url,{headers:T?{Authorization:'Bearer '+T}:{'x-owner-key':pkey()}});if(!r.ok)return alert((await r.json()).error||'Gagal unduh');
+ const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());a.download='surat-izin-'+id+'.pdf';a.click()}
+const ACT={SUBMIT:'Pengajuan dikirim',APPROVE:'Disetujui atasan',REJECT:'Ditolak',AUTO_APPROVE:'Disetujui otomatis (SYSTEM_HR)',ESCALATE_MANUAL:'Diteruskan ke HR (review manual)',HR_APPROVE:'Disetujui HR',HR_REJECT:'Ditolak HR'};
+async function showLog(id){try{const d=await api(`/requests/${id}/log`),ov=document.createElement('div');ov.id='ov';
+ ov.style.cssText='position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:12px;z-index:9';ov.onclick=(e)=>e.target===ov&&ov.remove();
+ ov.innerHTML=`<div class="card" style="max-width:640px;width:100%;max-height:85vh;overflow:auto;margin:0"><h3>Riwayat & Status</h3><small>${esc(d.request.applicant_name)} · ${esc(d.request.department)}${d.request.request_no?' · '+esc(d.request.request_no):''}</small>
+ <table><tr><th>Waktu</th><th>Oleh</th><th>Kejadian</th></tr>${d.log.map(l=>{let n='';try{n=JSON.parse(l.detail||'{}').note||''}catch(e){}return`<tr><td>${esc(l.created_at)}</td><td>${esc(l.actor)}</td><td>${esc(ACT[l.action]||l.action)}${n?`<br><small>Catatan: ${esc(n)}</small>`:''}</td></tr>`}).join('')}</table>
+ <br><button onclick="document.getElementById('ov').remove()">Tutup</button></div>`;document.body.appendChild(ov)}catch(e){alert(e.message)}}
+async function decide(act,id,version,action){let note='';
+ if(action==='REJECT'){note=prompt('Alasan penolakan (wajib):');if(!note)return}
+ try{await api(`/${act==='sup'?'supervisor':'hr'}/requests/${id}/decision`,{method:'POST',json:{action,version,note}})}catch(e){alert(e.message)}
+ act==='sup'?supPanel():hrPanel()}
+async function supPanel(){const r=await api('/supervisor/requests');$('#app').innerHTML=`<div class="card"><h3>Supervisor Panel</h3>${tbl(r,'sup')}</div>`}
+async function hrPanel(){const r=await api('/hr/requests');$('#app').innerHTML=`<div class="card"><h3>HR Panel — Monitoring</h3>${tbl(r,'hr')}</div>`}
+
+/* ---------- Admin ---------- */
+async function adminPanel(tab){$('#app').innerHTML=`<div style="margin-bottom:12px"><button class="${tab==='users'?'':'g'}" onclick="adminPanel('users')">Atasan & HR</button>
+ <button class="${tab==='rules'?'':'g'}" onclick="adminPanel('rules')">Rule Persetujuan</button></div><div id="ab"></div>`;tab==='users'?adminUsers():adminRules()}
+async function adminUsers(){META=await api('/public/meta');USERS=await api('/admin/users');
+ $('#ab').innerHTML=`<div class="card"><h3 id="ft">Tambah User Petugas</h3><small>Karyawan biasa tidak perlu didaftarkan. Di sini hanya akun Atasan, HR, dan Admin.</small><input type="hidden" id="e_id">
+ <div class="row" style="margin-top:10px"><div><label>Nama lengkap</label><input id="e_name"></div><div><label>No. WhatsApp (628xxx)</label><input id="e_phone"></div></div>
+ <div class="row"><div><label>Akses</label><select id="e_role" onchange="rl()"><option>SUPERVISOR</option><option>HR</option><option>ADMIN</option></select></div><div><label>Username</label><input id="e_user"></div></div>
+ <label>Password <small>(kosongkan jika tidak diubah)</small></label><div style="position:relative"><input id="e_pw" type="password" autocomplete="new-password" style="padding-right:40px">${eye('e_pw')}</div>
+ <div id="dpw"><label>Departemen yang diawasi <small>(pengajuan departemen ini masuk ke panel atasan tersebut)</small></label>
+ ${META.departments.map(d=>`<label style="margin-right:14px"><input type="checkbox" class="dp" value="${d}"> ${d}</label>`).join('')}</div><br>
+ <label><input type="checkbox" id="e_act" checked> Aktif</label><br><br><button onclick="saveUser()">Simpan</button><button class="g" onclick="adminUsers()">Batal</button></div>
+ <div class="card" style="overflow-x:auto"><table><tr><th>Nama</th><th>Login</th><th>Departemen</th><th>Status</th><th></th></tr>`+
+ USERS.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.username)} <span class="b">${u.role}</span></td><td>${esc((u.depts||'-').split(',').join(', '))}</td><td>${u.active?'Aktif':'Nonaktif'}</td>
+ <td><button class="g" onclick="editUser(${u.user_id})">Edit</button><button class="r" onclick="delUser(${u.user_id})">Hapus</button></td></tr>`).join('')+'</table></div>';rl()}
+async function delUser(id){const u=USERS.find(x=>x.user_id===id);if(!confirm(`Hapus akun ${u.name} (${u.username})? Tindakan ini permanen.`))return;
+ try{await api('/admin/users/'+id,{method:'DELETE'});adminUsers()}catch(e){alert(e.message)}}
+function rl(){$('#dpw').style.display=$('#e_role').value==='SUPERVISOR'?'':'none'}
+function editUser(id){const u=USERS.find(x=>x.user_id===id),set=(k,v)=>$('#'+k).value=v??'';
+ set('e_id',u.user_id);set('e_name',u.name);set('e_phone',u.phone);set('e_role',u.role);set('e_user',u.username);set('e_pw','');$('#e_act').checked=!!u.active;
+ const ds=(u.depts||'').split(',');document.querySelectorAll('.dp').forEach(c=>c.checked=ds.includes(c.value));$('#ft').textContent='Ubah: '+u.name;rl();scrollTo(0,0)}
+async function saveUser(){const v=(k)=>$('#'+k).value;
+ try{await api('/admin/users',{method:'POST',json:{user_id:v('e_id'),name:v('e_name'),phone:v('e_phone'),role:v('e_role'),username:v('e_user'),password:v('e_pw'),
+  departments:[...document.querySelectorAll('.dp:checked')].map(c=>c.value),active:$('#e_act').checked}});adminUsers()}catch(e){alert(e.message)}}
+async function adminRules(){const r=await api('/admin/rules');
+ $('#ab').innerHTML=`<div class="card" style="overflow-x:auto"><h3>Rule Persetujuan</h3><small>Auto = langsung disetujui sistem (SYSTEM_HR) bila durasi ≤ maks hari. Kode baru: isi baris kosong paling bawah.</small>
+ <table><tr><th>Kode</th><th>Nama</th><th>Auto</th><th>Maks hari</th><th>Aktif</th><th></th></tr>`+
+ r.concat([{id:'new',leave_type:'',label:'',auto_approve:0,max_days:'',active:1}]).map(x=>`<tr><td><input class="lt" value="${esc(x.leave_type)}" ${x.id==='new'?'placeholder="KODE_BARU"':'readonly'}></td>
+ <td><input class="lb" value="${esc(x.label)}"></td><td><input type="checkbox" class="au" ${x.auto_approve?'checked':''}></td>
+ <td><input type="number" min="1" class="md" value="${x.max_days??''}"></td><td><input type="checkbox" class="ac" ${x.active?'checked':''}></td>
+ <td><button onclick="saveRule(this)">Simpan</button></td></tr>`).join('')+'</table></div>'}
+async function saveRule(b){const t=b.closest('tr'),q=(c)=>t.querySelector(c);
+ try{await api('/admin/rules',{method:'POST',json:{leave_type:q('.lt').value.trim().toUpperCase(),label:q('.lb').value,auto_approve:q('.au').checked,max_days:q('.md').value,active:q('.ac').checked}});adminRules()}catch(e){alert(e.message)}}
+render();
+</script></body></html>

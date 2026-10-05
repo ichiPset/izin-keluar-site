@@ -1,0 +1,9 @@
+{
+  "name": "izin-keluar-site",
+  "version": "1.0.0",
+  "description": "Aplikasi digital izin meninggalkan site: Karyawan -> Atasan -> Auto Approval HR",
+  "engines": { "node": ">=22.13" },
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js", "dev": "node --watch src/server.js" },
+  "dependencies": { "express": "^4.19.2", "pdfkit": "^0.15.0" }
+}
