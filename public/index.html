@@ -114,6 +114,15 @@ async function dl(id){
     alert('Error: ' + e.message);
   }
 }
+async function supPanel(){
+  const r = await api('/supervisor/requests');
+  $('#app').innerHTML = `<div class="card"><h3>Supervisor Panel</h3>${tbl(r,'sup')}</div>`;
+}
+
+async function hrPanel(){
+  const r = await api('/hr/requests');
+  $('#app').innerHTML = `<div class="card"><h3>HR Panel — Monitoring</h3>${tbl(r,'hr')}</div>`;
+}
 
 /* ---------- Admin ---------- */
 async function adminPanel(tab){$('#app').innerHTML=`<div style="margin-bottom:12px"><button class="${tab==='users'?'':'g'}" onclick="adminPanel('users')">Atasan & HR</button>
