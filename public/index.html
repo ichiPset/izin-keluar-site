@@ -36,7 +36,7 @@ const eye=(id)=>`<span title="Tampilkan/sembunyikan" onclick="const i=document.g
 function loginView(){$('#app').innerHTML=`<form id="lf" class="card" style="max-width:340px;margin:40px auto"><h3>Login Petugas</h3><small>Atasan, HR, dan Admin</small>
  <input id="u" placeholder="Username" autocomplete="username" style="margin-top:10px">
  <div style="position:relative"><input id="p" type="password" placeholder="Password" autocomplete="current-password" style="padding-right:40px">${eye('p')}</div>
- <button type="submit">Masuk</button><a href="#">← Form izin</a><p id="msg" class="err"></p><small>Demo: budi / rina / admin — password123</small></form>`;
+ <button type="submit">Masuk</button><a href="#">← Form izin</a><p id="msg" class="err"></p><small>password</small></form>`;
  $('#lf').onsubmit=(e)=>{e.preventDefault();login()};$('#u').focus()}
 async function login(){const m=$('#msg');m.textContent='';const u=$('#u').value.trim(),p=$('#p').value;
  if(!u||!p){m.textContent='Username dan password wajib diisi';return}
@@ -67,27 +67,53 @@ async function hist(){const h=$('#hist');if(!h)return;let r=[];try{r=await api('
 function restoreKey(){const k=$('#rk').value.trim().toLowerCase();if(!/^[a-f0-9]{32}$/.test(k))return alert('Kode akses tidak valid');localStorage.pkey=k;hist()}
 
 /* ---------- tabel & aksi bersama ---------- */
-function tbl(rows,act){return`<table><tr><th>Tgl</th>${act?'<th>Pemohon</th>':''}<th>Jenis</th><th>Alasan</th><th>Status</th>${act?'<th>Aksi</th>':''}</tr>`+
- rows.map(r=>`<tr><td>${r.start_date}<br><small>s/d ${r.end_date}</small></td>${act?`<td>${esc(r.applicant_name)}<br><small>${esc(r.applicant_nik)} · ${esc(r.applicant_position)}<br>${esc(r.department)}</small></td>`:''}<td>${esc(r.leave_type)}</td>
- <td>${esc(r.reason)}${r.reject_reason?`<br><small>Ditolak: ${esc(r.reject_reason)}</small>`:''}</td>
- <td>${badge(r.status)}${r.request_no?`<br><small>${r.request_no}</small>`:''}${['AUTO_APPROVED_HR','APPROVED_HR'].includes(r.status)?`<br><button class="g" onclick="dl(${r.id})">⬇ PDF</button>`:''}</td>
- ${act?`<td><button class="g" onclick="showLog(${r.id})">📜 Log</button> ${(act==='sup'&&r.status==='PENDING_SUPERVISOR'||act==='hr'&&r.status==='PENDING_HR_MANUAL')?
- `<button onclick="decide('${act}',${r.id},${r.version},'APPROVE')">Setujui</button><button class="r" onclick="decide('${act}',${r.id},${r.version},'REJECT')">Tolak</button>`:''}</td>`:''}</tr>`).join('')+'</table>'}
-async function dl(id){const url=U?`/api/requests/${id}/pdf`:`/api/public/requests/${id}/pdf`;
- const r=await fetch(url,{headers:T?{Authorization:'Bearer '+T}:{'x-owner-key':pkey()}});if(!r.ok)return alert((await r.json()).error||'Gagal unduh');
- const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());a.download='surat-izin-'+id+'.pdf';a.click()}
-const ACT={SUBMIT:'Pengajuan dikirim',APPROVE:'Disetujui atasan',REJECT:'Ditolak',AUTO_APPROVE:'Disetujui otomatis (SYSTEM_HR)',ESCALATE_MANUAL:'Diteruskan ke HR (review manual)',HR_APPROVE:'Disetujui HR',HR_REJECT:'Ditolak HR'};
-async function showLog(id){try{const d=await api(`/requests/${id}/log`),ov=document.createElement('div');ov.id='ov';
- ov.style.cssText='position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:12px;z-index:9';ov.onclick=(e)=>e.target===ov&&ov.remove();
- ov.innerHTML=`<div class="card" style="max-width:640px;width:100%;max-height:85vh;overflow:auto;margin:0"><h3>Riwayat & Status</h3><small>${esc(d.request.applicant_name)} · ${esc(d.request.department)}${d.request.request_no?' · '+esc(d.request.request_no):''}</small>
- <table><tr><th>Waktu</th><th>Oleh</th><th>Kejadian</th></tr>${d.log.map(l=>{let n='';try{n=JSON.parse(l.detail||'{}').note||''}catch(e){}return`<tr><td>${esc(l.created_at)}</td><td>${esc(l.actor)}</td><td>${esc(ACT[l.action]||l.action)}${n?`<br><small>Catatan: ${esc(n)}</small>`:''}</td></tr>`}).join('')}</table>
- <br><button onclick="document.getElementById('ov').remove()">Tutup</button></div>`;document.body.appendChild(ov)}catch(e){alert(e.message)}}
-async function decide(act,id,version,action){let note='';
- if(action==='REJECT'){note=prompt('Alasan penolakan (wajib):');if(!note)return}
- try{await api(`/${act==='sup'?'supervisor':'hr'}/requests/${id}/decision`,{method:'POST',json:{action,version,note}})}catch(e){alert(e.message)}
- act==='sup'?supPanel():hrPanel()}
-async function supPanel(){const r=await api('/supervisor/requests');$('#app').innerHTML=`<div class="card"><h3>Supervisor Panel</h3>${tbl(r,'sup')}</div>`}
-async function hrPanel(){const r=await api('/hr/requests');$('#app').innerHTML=`<div class="card"><h3>HR Panel — Monitoring</h3>${tbl(r,'hr')}</div>`}
+function tbl(rows,act){
+  return `<table><tr><th>Tgl</th>${act?'<th>Pemohon</th>':''}<th>Jenis</th><th>Alasan</th><th>Status</th>${act?'<th>Aksi</th>':''}</tr>`+
+  rows.map(r=>{
+    const approved = ['AUTO_APPROVED_HR','APPROVED_HR'].includes(r.status);
+    const pdfBtn = approved
+      ? `<br><button class="g" onclick="dl(${r.id})" title="Unduh surat izin">⬇ Unduh PDF</button>`
+      : `<br><small style="color:var(--mu)">PDF tersedia setelah disetujui HR</small>`;
+
+    return `<tr>
+      <td>${r.start_date}<br><small>s/d ${r.end_date}</small></td>
+      ${act?`<td>${esc(r.applicant_name)}<br><small>${esc(r.applicant_nik)} · ${esc(r.applicant_position)}<br>${esc(r.department)}</small></td>`:''}
+      <td>${esc(r.leave_type)}</td>
+      <td>${esc(r.reason)}${r.reject_reason?`<br><small>Ditolak: ${esc(r.reject_reason)}</small>`:''}</td>
+      <td>${badge(r.status)}${r.request_no?`<br><small>${r.request_no}</small>`:''}${pdfBtn}</td>
+      ${act?`<td>
+        <button class="g" onclick="showLog(${r.id})">📜 Log</button>
+        ${(act==='sup'&&r.status==='PENDING_SUPERVISOR'||act==='hr'&&r.status==='PENDING_HR_MANUAL')
+          ? `<button onclick="decide('${act}',${r.id},${r.version},'APPROVE')">Setujui</button>
+             <button class="r" onclick="decide('${act}',${r.id},${r.version},'REJECT')">Tolak</button>`
+          : ''}
+      </td>`:''}
+    </tr>`;
+  }).join('')+'</table>';
+}
+async function dl(id){
+  const url = U ? `/api/requests/${id}/pdf` : `/api/public/requests/${id}/pdf`;
+  const headers = T 
+    ? { Authorization: 'Bearer ' + T } 
+    : { 'x-owner-key': pkey() };
+  try {
+    const r = await fetch(url, { headers });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({ error: 'Gagal mengunduh' }));
+      return alert(err.error || 'Gagal mengunduh PDF');
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'surat-izin-' + id + '.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
 
 /* ---------- Admin ---------- */
 async function adminPanel(tab){$('#app').innerHTML=`<div style="margin-bottom:12px"><button class="${tab==='users'?'':'g'}" onclick="adminPanel('users')">Atasan & HR</button>
