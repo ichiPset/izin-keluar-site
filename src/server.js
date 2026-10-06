@@ -169,17 +169,17 @@ app.post('/api/supervisor/requests/:id/decision', auth('SUPERVISOR'), async (req
         await tx.execute({ sql: 'INSERT INTO notifications(employee_id,phone,message) VALUES (0,?,?)', args: [r.phone, `[Izin] Pengajuan ${r.start_date} s/d ${r.end_date} DITOLAK atasan. Alasan: ${note.trim()}`] });
       }
     });
-    if (action === 'APPROVE') bus.emit('supervisor.approved', id);
-    res.json({ ok: true });
+    if (action === 'APPROVE') await processApproval(id); // Jalankan langsung, jangan via event
+res.json({ ok: true });
   } catch (e) { res.status(st(e)).json({ error: e.message }); }
 });
 
 // ---------- AUTO APPROVAL ENGINE ----------
-bus.on('supervisor.approved', (id) => setImmediate(async () => {
+async function processApproval(id) {
   try {
     await db.transaction(async (tx) => {
       const q = await tx.execute({ sql: "SELECT * FROM leave_requests WHERE id=? AND status='APPROVED_ATASAN'", args: [id] });
-      const r = q.rows[0]; if (!r) return;
+      const r = q.rows[0]; if (!r) return; // idempotent
       const rq = await tx.execute({ sql: 'SELECT * FROM approval_rules WHERE leave_type=? AND active=1', args: [r.leave_type] });
       const rule = rq.rows[0];
       if (rule && rule.auto_approve && (!rule.max_days || days(r.start_date, r.end_date) <= rule.max_days)) {
@@ -203,11 +203,11 @@ bus.on('supervisor.approved', (id) => setImmediate(async () => {
       }
     });
   } catch (e) { console.error('Engine error', e); }
-}));
+}
 
 const recover = async () => {
   const rows = await dbAll("SELECT id FROM leave_requests WHERE status='APPROVED_ATASAN'");
-  for (const r of rows) bus.emit('supervisor.approved', Number(r.id));
+  for (const r of rows) await processApproval(Number(r.id));
 };
 
 // ---------- HR ----------
