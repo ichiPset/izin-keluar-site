@@ -123,6 +123,42 @@ async function hrPanel(){
   const r = await api('/hr/requests');
   $('#app').innerHTML = `<div class="card"><h3>HR Panel — Monitoring</h3>${tbl(r,'hr')}</div>`;
 }
+const ACT={SUBMIT:'Pengajuan dikirim',APPROVE:'Disetujui atasan',REJECT:'Ditolak',AUTO_APPROVE:'Disetujui otomatis (SYSTEM_HR)',ESCALATE_MANUAL:'Diteruskan ke HR (review manual)',HR_APPROVE:'Disetujui HR',HR_REJECT:'Ditolak HR'};
+
+async function showLog(id){
+  try {
+    const d = await api(`/requests/${id}/log`);
+    const ov = document.createElement('div');
+    ov.id = 'ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:#0008;display:flex;align-items:center;justify-content:center;padding:12px;z-index:9';
+    ov.onclick = (e) => e.target === ov && ov.remove();
+    ov.innerHTML = `<div class="card" style="max-width:640px;width:100%;max-height:85vh;overflow:auto;margin:0">
+      <h3>Riwayat & Status</h3>
+      <small>${esc(d.request.applicant_name)} · ${esc(d.request.department)}${d.request.request_no ? ' · ' + esc(d.request.request_no) : ''}</small>
+      <table><tr><th>Waktu</th><th>Oleh</th><th>Kejadian</th></tr>
+      ${d.log.map(l => {
+        let n = '';
+        try { n = JSON.parse(l.detail || '{}').note || ''; } catch(e) {}
+        return `<tr><td>${esc(l.created_at)}</td><td>${esc(l.actor)}</td><td>${esc(ACT[l.action] || l.action)}${n ? `<br><small>Catatan: ${esc(n)}</small>` : ''}</td></tr>`;
+      }).join('')}
+      </table>
+      <br><button onclick="document.getElementById('ov').remove()">Tutup</button>
+    </div>`;
+    document.body.appendChild(ov);
+  } catch(e) { alert(e.message); }
+}
+
+async function decide(act, id, version, action){
+  let note = '';
+  if (action === 'REJECT') {
+    note = prompt('Alasan penolakan (wajib):');
+    if (!note) return;
+  }
+  try {
+    await api(`/${act === 'sup' ? 'supervisor' : 'hr'}/requests/${id}/decision`, { method: 'POST', json: { action, version, note } });
+  } catch(e) { alert(e.message); }
+  act === 'sup' ? supPanel() : hrPanel();
+}
 
 /* ---------- Admin ---------- */
 async function adminPanel(tab){$('#app').innerHTML=`<div style="margin-bottom:12px"><button class="${tab==='users'?'':'g'}" onclick="adminPanel('users')">Atasan & HR</button>
