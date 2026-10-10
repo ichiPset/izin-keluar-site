@@ -159,7 +159,7 @@ app.post('/api/supervisor/requests/:id/decision', auth('SUPERVISOR'), async (req
       r = q.rows[0];
       if (!r) throw bad('Pengajuan bukan dari departemen Anda', 403);
       const uq = await tx.execute({
-        sql: `UPDATE leave_requests SET status=?, reject_reason=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=? AND version=? AND status='PENDING_SUPERVISOR'`,
+        sql: `UPDATE leave_requests SET status=?, reject_reason=?, version=version+1, updated_at=datetime('now', '+7 hours') WHERE id=? AND version=? AND status='PENDING_SUPERVISOR'`,
         args: [action === 'APPROVE' ? 'APPROVED_ATASAN' : 'REJECTED', action === 'REJECT' ? note.trim() : null, id, Number(version)]
       });
       if (uq.rowsAffected === 0) throw bad('Data sudah diproses/berubah. Muat ulang halaman.', 409);
@@ -187,12 +187,12 @@ async function processApproval(id) {
         await tx.execute({ sql: 'INSERT INTO counters(name,value) VALUES (?,1) ON CONFLICT(name) DO UPDATE SET value=value+1', args: [key] });
         const cRow = await tx.execute({ sql: 'SELECT value FROM counters WHERE name=?', args: [key] });
         const no = `IZN/${ym.replace('-', '/')}/${String(cRow.rows[0].value).padStart(5, '0')}`;
-        await tx.execute({ sql: `UPDATE leave_requests SET status='AUTO_APPROVED_HR', request_no=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=?`, args: [no, id] });
+        await tx.execute({ sql: `UPDATE leave_requests SET status='AUTO_APPROVED_HR', request_no=?, version=version+1, updated_at=datetime('now', '+7 hours') WHERE id=?`, args: [no, id] });
         await tx.execute({ sql: 'INSERT INTO request_approvals(request_id,level,approver,action,note) VALUES (?,?,?,?,?)', args: [id, 'HR', 'SYSTEM_HR', 'AUTO_APPROVE', 'Memenuhi rule auto-approve'] });
         await tx.execute({ sql: 'INSERT INTO audit_logs(actor,action,entity,entity_id,detail) VALUES (?,?,?,?,?)', args: ['SYSTEM_HR', 'AUTO_APPROVE', 'leave_request', id, JSON.stringify({ no })] });
         if (r.phone) await tx.execute({ sql: 'INSERT INTO notifications(employee_id,phone,message) VALUES (0,?,?)', args: [r.phone, `[Izin] Izin DISETUJUI. No: ${no} (${r.start_date} s/d ${r.end_date}).`] });
       } else {
-        await tx.execute({ sql: `UPDATE leave_requests SET status='PENDING_HR_MANUAL', version=version+1, updated_at=datetime('now','localtime') WHERE id=?`, args: [id] });
+        await tx.execute({ sql: `UPDATE leave_requests SET status='PENDING_HR_MANUAL', version=version+1, updated_at=datetime('now', '+7 hours') WHERE id=?`, args: [id] });
         await tx.execute({ sql: 'INSERT INTO audit_logs(actor,action,entity,entity_id,detail) VALUES (?,?,?,?,?)', args: ['SYSTEM_HR', 'ESCALATE_MANUAL', 'leave_request', id, null] });
         const hrs = await tx.execute("SELECT employee_id FROM users WHERE role='HR'");
         for (const u of hrs.rows) {
@@ -234,7 +234,7 @@ app.post('/api/hr/requests/:id/decision', auth('HR'), async (req, res) => {
         no = `IZN/${ym.replace('-', '/')}/${String(cRow.rows[0].value).padStart(5, '0')}`;
       }
       const uq = await tx.execute({
-        sql: `UPDATE leave_requests SET status=?, request_no=?, reject_reason=?, version=version+1, updated_at=datetime('now','localtime') WHERE id=? AND version=? AND status='PENDING_HR_MANUAL'`,
+        sql: `UPDATE leave_requests SET status=?, request_no=?, reject_reason=?, version=version+1, updated_at=datetime('now', '+7 hours') WHERE id=? AND version=? AND status='PENDING_HR_MANUAL'`,
         args: [ok ? 'APPROVED_HR' : 'REJECTED', no, ok ? null : note.trim(), id, Number(version)]
       });
       if (uq.rowsAffected === 0) throw bad('Data sudah diproses/berubah. Muat ulang halaman.', 409);
