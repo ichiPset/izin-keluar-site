@@ -433,7 +433,7 @@ app.get('/api/requests/:id/log', auth('SUPERVISOR', 'HR', 'ADMIN'), async (req, 
 // ---------- WA WORKER ----------
 let busy = false;
 setInterval(async () => {
-  if (busy) return; busy = true;
+  if (busy|| !dbInitialized) return; busy = true;
   try {
     const notifs = await dbAll("SELECT * FROM notifications WHERE status='QUEUED' ORDER BY id LIMIT 20");
     for (const n of notifs) {
