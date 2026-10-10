@@ -21,7 +21,26 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public'), { setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache') }));
+// ---------- INIT & SERVERLESS HANDLER ----------
+let dbInitialized = false;
+const init = async () => {
+  if (!dbInitialized) {
+    await initDb();
+    try { await recover(); } catch (e) { console.error('Recover error', e); }
+    dbInitialized = true;
+  }
+};
 
+// Middleware untuk memastikan database siap sebelum memproses request
+app.use(async (req, res, next) => {
+  try {
+    await init();
+    next();
+  } catch (err) {
+    console.error('Gagal inisialisasi database:', err);
+    res.status(500).json({ error: 'Gagal inisialisasi database: ' + err.message });
+  }
+});
 // ---------- util ----------
 const today = () => new Date().toLocaleDateString('sv-SE');
 const days = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5) + 1;
@@ -425,26 +444,7 @@ setInterval(async () => {
   busy = false;
 }, 3000);
 
-// ---------- INIT & SERVERLESS HANDLER ----------
-let dbInitialized = false;
-const init = async () => {
-  if (!dbInitialized) {
-    await initDb();
-    try { await recover(); } catch (e) { console.error('Recover error', e); }
-    dbInitialized = true;
-  }
-};
 
-// Middleware untuk memastikan database siap sebelum memproses request
-app.use(async (req, res, next) => {
-  try {
-    await init();
-    next();
-  } catch (err) {
-    console.error('Gagal inisialisasi database:', err);
-    res.status(500).json({ error: 'Gagal inisialisasi database: ' + err.message });
-  }
-});
 
 // Error handler global
 app.use((err, req, res, next) => {
