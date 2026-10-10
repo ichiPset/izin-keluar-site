@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  izin-app:
+    build: .
+    container_name: izin-keluar-site
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      # Mount folder data agar database SQLite tidak hilang saat container di-restart
+      - ./data:/app/data

@@ -1,4 +1,7 @@
-node_modules
-data
-uploads
+node_modules/
 .env
+data/
+*.db
+*.sqlite
+*.log
+.DS_Store
