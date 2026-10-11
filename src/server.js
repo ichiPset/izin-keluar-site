@@ -41,6 +41,41 @@ app.use(async (req, res, next) => {
     res.status(500).json({ error: 'Gagal inisialisasi database: ' + err.message });
   }
 });
+// ---------- DIAGNOSTIC (sementara) ----------
+app.get('/api/_diag', async (req, res) => {
+  try {
+    const url = process.env.TURSO_DATABASE_URL || '(kosong)';
+    const hasToken = process.env.TURSO_AUTH_TOKEN ? 'ADA' : 'KOSONG';
+    
+    let tables = [];
+    let users = [];
+    let totalRequests = 0;
+    let errMsg = null;
+    
+    try {
+      tables = await dbAll("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name");
+      users = await dbAll("SELECT id, username, role FROM users LIMIT 10");
+      const reqCount = await dbGet("SELECT COUNT(*) c FROM leave_requests");
+      totalRequests = Number(reqCount?.c || 0);
+    } catch (e) { errMsg = e.message; }
+    
+    res.json({
+      turso_url: url,
+      turso_token: hasToken,
+      vercel_env: process.env.VERCEL_ENV || '-',
+      vercel_region: process.env.VERCEL_REGION || '-',
+      node_env: process.env.NODE_ENV || '-',
+      jumlah_tabel: tables.length,
+      tabel_ada: tables.map(t => t.name),
+      jumlah_user: users.length,
+      daftar_user: users,
+      total_pengajuan: totalRequests,
+      error_query: errMsg
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 // ---------- util ----------
 const today = () => new Date().toLocaleDateString('sv-SE');
 const days = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5) + 1;
