@@ -1,7 +1,7 @@
 const { createClient } = require('@libsql/client');
 const crypto = require('crypto');
 
-const DEPARTMENTS = ['HRGA', 'MINING', 'PLAN', 'HSE', 'LOGISTIK', 'VENDOR', 'VISITOR'];
+const DEPARTMENTS = ['HRGA', 'MINING', 'PLANT', 'HSE', 'LOGISTIK', 'VENDOR', 'VISITOR'];
 
 let _client = null;
 
